@@ -1,0 +1,116 @@
+version: "3.9"
+
+services:
+  # ─── Core Application ───────────────────────────────────────────────────────
+  aita-api:
+    build: .
+    command: uvicorn aita.main:app --host 0.0.0.0 --port 8080 --reload
+    ports:
+      - "8080:8080"
+    env_file: .env
+    volumes:
+      - ./src:/app/src
+      - test-repos:/app/test-repos
+    depends_on:
+      aita-postgres:
+        condition: service_healthy
+      aita-redis:
+        condition: service_healthy
+    networks:
+      - aita-net
+
+  aita-worker:
+    build: .
+    command: celery -A aita.worker worker --loglevel=info --concurrency=4
+    env_file: .env
+    volumes:
+      - ./src:/app/src
+      - test-repos:/app/test-repos
+    depends_on:
+      aita-redis:
+        condition: service_healthy
+      aita-postgres:
+        condition: service_healthy
+    networks:
+      - aita-net
+
+  # ─── Infrastructure ─────────────────────────────────────────────────────────
+  aita-redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - aita-net
+
+  aita-postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: aita
+      POSTGRES_USER: aita
+      POSTGRES_PASSWORD: aita_secret
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aita"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - aita-net
+
+  aita-qdrant:
+    image: qdrant/qdrant:v1.9.3
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - aita-net
+
+  aita-ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - aita-net
+    # GPU passthrough (uncomment for NVIDIA):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+
+  aita-allure:
+    image: frankescobar/allure-docker-service:latest
+    ports:
+      - "5050:5050"
+    environment:
+      CHECK_RESULTS_EVERY_SECONDS: 3
+      KEEP_HISTORY: 20
+    volumes:
+      - allure-results:/app/allure-results
+      - allure-reports:/app/default-reports
+    networks:
+      - aita-net
+
+volumes:
+  pg-data:
+  qdrant-data:
+  ollama-models:
+  allure-results:
+  allure-reports:
+  test-repos:
+
+networks:
+  aita-net:
+    driver: bridge
