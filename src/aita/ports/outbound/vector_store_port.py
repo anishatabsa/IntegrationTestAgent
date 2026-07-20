@@ -19,5 +19,9 @@ class VectorStorePort(ABC):
         """Delete points by ID."""
 
     @abstractmethod
+    async def delete_by_filter(self, collection: str, filter_key: str, filter_value: str) -> None:
+        """Delete all points whose *filter_key* payload field equals *filter_value*."""
+
+    @abstractmethod
     async def ensure_collection(self, collection: str, vector_size: int) -> None:
         """Create collection if it doesn't exist."""

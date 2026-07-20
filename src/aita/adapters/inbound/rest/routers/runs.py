@@ -1,14 +1,17 @@
 """REST router: /api/v1/runs — pipeline trigger and status."""
 from __future__ import annotations
 
+import asyncio
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from aita.core.pipeline.context import PipelineOptions
+from aita.core.pipeline.context import PipelineContext, PipelineOptions
 from aita.core.orchestrator import PipelineOrchestrator
+from aita.domain.enums import RunStatus
 
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 
@@ -24,6 +27,15 @@ class RunRequest(BaseModel):
     run_tests: bool = True
     push_to_allure: bool = False
     push_to_qmetry: bool = False
+    # Inline service config — no pre-registration needed when these are set
+    repo_url: str = ""
+    base_url: str = ""
+    language: str = "python"
+    spec_url: str = ""
+    # Test automation repo publishing
+    test_automation_repo_url: str = ""
+    test_automation_branch: str = "main"
+    publish_on_gate_pass: bool = True
 
 
 def get_orchestrator() -> PipelineOrchestrator:
@@ -39,12 +51,11 @@ async def trigger_run(
     orchestrator: PipelineOrchestrator = Depends(get_orchestrator),
 ):
     """Trigger a pipeline run asynchronously. Returns run_id immediately."""
-    from aita.core.pipeline.context import PipelineContext
-    import uuid
     options = PipelineOptions(**req.model_dump())
     ctx = PipelineContext(options=options)
-
-    background_tasks.add_task(orchestrator.run, req.service_name, options)
+    # Pre-register so the SSE stream can find this run_id immediately
+    orchestrator.register_run(ctx)
+    background_tasks.add_task(orchestrator.run, req.service_name, options, ctx)
     return {"run_id": str(ctx.run_id), "status": "accepted"}
 
 
@@ -53,16 +64,55 @@ async def stream_run(
     run_id: UUID,
     orchestrator: PipelineOrchestrator = Depends(get_orchestrator),
 ):
-    """SSE endpoint: streams pipeline events for a run."""
+    """SSE endpoint: poll the running pipeline context and emit step events."""
+
     async def event_generator():
-        ctx = await orchestrator.get_run(run_id)
-        if not ctx:
-            yield "event: error\ndata: {\"message\": \"Run not found\"}\n\n"
+        # Wait up to 4 seconds for the background task to actually start
+        ctx: PipelineContext | None = None
+        for _ in range(20):
+            ctx = await orchestrator.get_run(run_id)
+            if ctx is not None:
+                break
+            await asyncio.sleep(0.2)
+
+        if ctx is None:
+            yield f"data: {json.dumps({'event_type': 'error', 'message': 'Run not found'})}\n\n"
             return
-        # For fresh runs started via the stream endpoint
-        options = ctx.options
-        async for event in orchestrator.run_streaming(options.service_name, options):
-            yield event.get("sse", "")
+
+        last_idx = 0
+        last_status = None
+
+        while True:
+            # Emit any newly completed steps
+            while last_idx < len(ctx.step_results):
+                r = ctx.step_results[last_idx]
+                event_type = "step_completed" if r.status == "success" else (
+                    "step_failed" if r.status == "failed" else "step_skipped"
+                )
+                payload = {
+                    "event_type": event_type,
+                    "step": str(r.step),
+                    "message": r.message or str(r.step),
+                    "duration_ms": r.duration_ms,
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                last_idx += 1
+
+            current_status = ctx.status
+            if current_status != last_status:
+                last_status = current_status
+
+            # Pipeline finished
+            if current_status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED):
+                if current_status == RunStatus.COMPLETED:
+                    yield f"data: {json.dumps({'event_type': 'pipeline_completed', 'data': ctx.summary()})}\n\n"
+                else:
+                    errors = "; ".join(ctx.errors) or str(current_status)
+                    # Include the run summary so the CLI can display pass rate etc.
+                    yield f"data: {json.dumps({'event_type': 'pipeline_failed', 'message': errors, 'data': ctx.summary()})}\n\n"
+                return
+
+            await asyncio.sleep(0.5)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

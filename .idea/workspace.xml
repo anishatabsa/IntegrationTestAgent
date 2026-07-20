@@ -4,13 +4,21 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="1c29b4ef-15eb-4d23-9329-98ac807df3d2" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/IntegrationTestAgent.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/AI_INTEGRATION_TEST_AGENT_PLAN.md" afterDir="false" />
+    <list default="true" id="1c29b4ef-15eb-4d23-9329-98ac807df3d2" name="Changes" comment="Initial Commit">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/setup-mac.sh" beforeDir="false" afterPath="$PROJECT_DIR$/setup-mac.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/adapters/inbound/cli/display.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/adapters/inbound/cli/display.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/adapters/inbound/cli/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/adapters/inbound/cli/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/adapters/inbound/rest/routers/runs.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/adapters/inbound/rest/routers/runs.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/core/orchestrator.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/core/orchestrator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/core/pipeline/context.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/core/pipeline/context.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/core/pipeline/steps/execute_step.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/core/pipeline/steps/execute_step.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/core/pipeline/steps/generate_step.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/core/pipeline/steps/generate_step.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/core/pipeline/steps/git_pull_step.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/core/pipeline/steps/git_pull_step.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/core/pipeline/steps/spec_parse_step.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/core/pipeline/steps/spec_parse_step.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/aita/core/spec/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/aita/core/spec/parser.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -20,40 +28,76 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="KubernetesApiPersistence"><![CDATA[{}]]></component>
-  <component name="KubernetesApiProvider"><![CDATA[{
-  "isMigrated": true
-}]]></component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 0
-}]]></component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;anishatabsa&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/anishatabsa/IntegrationTestAgent.git&quot;,
+    &quot;accountId&quot;: &quot;f8a1af4c-358d-465e-b124-3ce93bca7171&quot;
+  }
+}</component>
+  <component name="KubernetesApiPersistence">{}</component>
+  <component name="KubernetesApiProvider">{
+  &quot;isMigrated&quot;: true
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
   <component name="ProjectId" id="3GYF8lRxdfkPACjT264nqu8dAdo" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
-    "git-widget-placeholder": "master",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/Users/DeepthyAN/PycharmProjects/IntegrationTestAgent",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager&quot;: &quot;true&quot;,
+    &quot;SHELLCHECK.PATH&quot;: &quot;/Users/DeepthyAN/Library/Application Support/JetBrains/PyCharm2025.1/plugins/Shell Script/shellcheck&quot;,
+    &quot;Shell Script.setup-mac.sh.executor&quot;: &quot;Run&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/DeepthyAN/PycharmProjects/IntegrationTestAgent&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$" />
       <recent name="$PROJECT_DIR$/../IntegrationTestAI" />
     </key>
+  </component>
+  <component name="RunManager">
+    <configuration name="setup-mac.sh" type="ShConfigurationType" temporary="true">
+      <option name="SCRIPT_TEXT" value="" />
+      <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+      <option name="SCRIPT_PATH" value="$PROJECT_DIR$/setup-mac.sh" />
+      <option name="SCRIPT_OPTIONS" value="" />
+      <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+      <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+      <option name="INTERPRETER_PATH" value="/usr/bin/env" />
+      <option name="INTERPRETER_OPTIONS" value="bash" />
+      <option name="EXECUTE_IN_TERMINAL" value="true" />
+      <option name="EXECUTE_SCRIPT_FILE" value="true" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Shell Script.setup-mac.sh" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
@@ -70,11 +114,25 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1784140439284</updated>
-      <workItem from="1784140440357" duration="2656000" />
+      <workItem from="1784140440357" duration="3419000" />
+      <workItem from="1784189419728" duration="10601000" />
     </task>
+    <task id="LOCAL-00001" summary="Initial Commit">
+      <option name="closed" value="true" />
+      <created>1784148099460</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1784148099460</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Initial Commit" />
+    <option name="LAST_COMMIT_MESSAGE" value="Initial Commit" />
   </component>
 </project>

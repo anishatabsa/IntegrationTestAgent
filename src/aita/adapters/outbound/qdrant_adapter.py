@@ -43,12 +43,30 @@ class QdrantAdapter(VectorStorePort):
         self, collection: str, query: str, top_k: int = 5
     ) -> list[dict]:
         vector = (await self._embedder([query]))[0]
-        results = await self._client.search(
-            collection_name=collection,
-            query_vector=vector,
-            limit=top_k,
-            with_payload=True,
-        )
+        # qdrant-client >=1.10 uses query_points() (requires Qdrant server >=1.10).
+        # Fall back to the legacy search() for older servers or older client builds.
+        # We catch broad Exception here because server version mismatches raise HTTP
+        # errors (UnexpectedResponse, ResponseHandlingException), not AttributeError.
+        try:
+            response = await self._client.query_points(
+                collection_name=collection,
+                query=vector,
+                limit=top_k,
+                with_payload=True,
+            )
+            results = response.points
+        except Exception as _qp_err:
+            logger.debug(
+                "query_points_fallback",
+                reason=type(_qp_err).__name__,
+                error=str(_qp_err)[:200],
+            )
+            results = await self._client.search(
+                collection_name=collection,
+                query_vector=vector,
+                limit=top_k,
+                with_payload=True,
+            )
         return [
             {"text": r.payload.get("text", ""), "score": r.score, "metadata": r.payload}
             for r in results
@@ -60,6 +78,18 @@ class QdrantAdapter(VectorStorePort):
             collection_name=collection,
             points_selector=PointIdsList(points=ids),
         )
+
+    async def delete_by_filter(self, collection: str, filter_key: str, filter_value: str) -> None:
+        from qdrant_client.models import FilterSelector
+        await self._client.delete(
+            collection_name=collection,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[FieldCondition(key=filter_key, match=MatchValue(value=filter_value))]
+                )
+            ),
+        )
+        logger.info("qdrant_deleted_by_filter", collection=collection, key=filter_key, value=filter_value)
 
     async def ensure_collection(self, collection: str, vector_size: int = _DEFAULT_VECTOR_SIZE) -> None:
         existing = await self._client.get_collections()

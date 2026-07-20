@@ -60,6 +60,7 @@ class PipelineStep(StrEnum):
     SOURCE_SCAN = "source_scan"
     ENDPOINT_DIFF = "endpoint_diff"
     RAG_ENRICH = "rag_enrich"
+    FETCH_EXISTING = "fetch_existing"
     GENERATE = "generate"
     HEAL = "heal"
     PERSIST = "persist"
@@ -67,3 +68,4 @@ class PipelineStep(StrEnum):
     FEEDBACK = "feedback"
     REPORT = "report"
     GATE = "gate"
+    PUBLISH = "publish"

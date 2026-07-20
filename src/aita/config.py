@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # ── Test Repository ───────────────────────────────────────────────────────
     test_repo_base_path: Path = Path("./test-repos")
 
+    # ── Test Automation Repo (GitHub PR publishing) ───────────────────────────
+    test_automation_repo_url: str = ""    # e.g. https://github.com/org/integration-test-automation
+    test_automation_branch: str = "main"  # default branch of the automation repo
+
     # ── Docker ────────────────────────────────────────────────────────────────
     docker_target_network: str = "bridge"
     docker_socket: str = "unix:///var/run/docker.sock"

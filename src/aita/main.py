@@ -22,6 +22,7 @@ from aita.core.executor.maven_executor import MavenExecutor
 from aita.core.executor.pytest_executor import PytestExecutor
 from aita.core.feedback.collector import FeedbackCollector
 from aita.core.feedback.pattern_learner import PatternLearner
+from aita.core.feedback.pattern_store import InMemoryPatternStore
 from aita.core.fingerprint.fingerprinter import EndpointFingerprinter
 from aita.core.generator.test_generator import TestGenerator
 from aita.core.healer.healer import HealerPipeline
@@ -39,6 +40,8 @@ from aita.core.pipeline.steps.endpoint_diff_step import EndpointDiffStep
 from aita.core.pipeline.steps.execute_step import ExecuteStep
 from aita.core.pipeline.steps.feedback_step import FeedbackStep
 from aita.core.pipeline.steps.gate_step import GateStep
+from aita.core.pipeline.steps.publish_step import PublishStep
+from aita.core.pipeline.steps.fetch_existing_step import FetchExistingTestsStep
 from aita.core.pipeline.steps.generate_step import GenerateStep
 from aita.core.pipeline.steps.git_pull_step import GitPullStep
 from aita.core.pipeline.steps.heal_step import HealStep
@@ -92,22 +95,117 @@ async def lifespan(app: FastAPI):
         )
 
     # ── Vector store + embedder ────────────────────────────────────────────────
-    async def embedder(texts: list[str]) -> list[list[float]]:
-        # Default: use Ollama nomic-embed-text or a simple placeholder
+    # Embedder: Ollama nomic-embed-text (768-dim).
+    # Uses the batch embed() API (ollama SDK >=0.3 / Ollama server >=0.1.33).
+    # Falls back to the legacy embeddings() API for older SDK installs.
+    # The sync Ollama client uses `requests` — dispatched via asyncio.to_thread()
+    # so it never blocks the event loop.
+    _ollama_model = settings.ollama_model if settings.llm_provider == "ollama" else "nomic-embed-text"
+
+    def _embed_sync(texts: list[str]) -> list[list[float]]:
         import ollama as _ollama
+        client = _ollama.Client(host=settings.ollama_base_url)
+        try:
+            # Preferred: batch embed() API (ollama SDK >=0.3, server >=0.1.33)
+            # POST /api/embed  —  returns EmbedResponse with .embeddings: list[list[float]]
+            resp = client.embed(model=_ollama_model, input=texts)
+            embeddings = resp.embeddings if hasattr(resp, "embeddings") else resp["embeddings"]
+            return [list(e) for e in embeddings]
+        except (AttributeError, KeyError, TypeError):
+            pass
+        # Fallback: legacy per-text embeddings() API (ollama SDK <0.3)
+        # POST /api/embeddings  —  returns {"embedding": list[float]}
         results = []
         for text in texts:
-            resp = _ollama.embeddings(model="nomic-embed-text", prompt=text)
-            results.append(resp["embedding"])
+            resp = client.embeddings(model=_ollama_model, prompt=text)
+            emb = resp["embedding"] if isinstance(resp, dict) else resp.embedding
+            results.append(list(emb))
         return results
 
-    vector_store = QdrantAdapter(qdrant_client, embedder)
-    await vector_store.ensure_collection(settings.qdrant_collection, vector_size=768)
+    async def embedder(texts: list[str]) -> list[list[float]]:
+        import asyncio
+        return await asyncio.to_thread(_embed_sync, texts)
 
-    # ── RAG ──────────────────────────────────────────────────────────────────
+    # ── Embedder startup: ensure model is available ───────────────────────────
+    import asyncio as _asyncio
+    try:
+        # Auto-pull nomic-embed-text if not present (runs synchronously at boot).
+        import ollama as _ollama_boot
+        _boot_client = _ollama_boot.Client(host=settings.ollama_base_url)
+        try:
+            _model_list = _boot_client.list()
+            _available = [
+                m.model if hasattr(m, "model") else m.get("model", "")
+                for m in (_model_list.models if hasattr(_model_list, "models") else _model_list.get("models", []))
+            ]
+            if not any(_ollama_model in m for m in _available):
+                logger.info("pulling_embedding_model", model=_ollama_model)
+                _boot_client.pull(model=_ollama_model)
+                logger.info("embedding_model_pulled", model=_ollama_model)
+        except Exception as _list_err:
+            logger.warning("embedding_model_list_failed", error=str(_list_err))
+
+        # Health check: embed one string and confirm we get a 768-dim vector back.
+        _test_vecs = await _asyncio.to_thread(_embed_sync, ["aita embedder health check"])
+        _dim = len(_test_vecs[0])
+        logger.info("embedder_healthy", model=_ollama_model, dim=_dim)
+        if _dim != 768:
+            logger.warning(
+                "embedder_dimension_mismatch",
+                expected=768,
+                got=_dim,
+                hint="Qdrant collection was created with vector_size=768. "
+                     "Re-ingest after changing embedding models.",
+            )
+    except Exception as _health_err:
+        logger.error(
+            "embedder_unhealthy",
+            error=str(_health_err),
+            error_type=type(_health_err).__name__,
+            hint=(
+                "RAG will return 0 snippets until this is fixed. "
+                f"Ensure Ollama is running and '{_ollama_model}' is pulled. "
+                "Run: docker exec integrationtestagent-aita-ollama-1 "
+                f"ollama pull {_ollama_model}"
+            ),
+        )
+
+    vector_store = QdrantAdapter(qdrant_client, embedder)
+
+    # Retry ensure_collection — Qdrant may still be booting when the API starts.
+    from tenacity import retry, stop_after_delay, wait_fixed, retry_if_exception_type
+    @retry(
+        retry=retry_if_exception_type(Exception),
+        wait=wait_fixed(2),
+        stop=stop_after_delay(30),
+        reraise=True,
+    )
+    async def _ensure_collection_with_retry() -> None:
+        await vector_store.ensure_collection(settings.qdrant_collection, vector_size=768)
+
+    try:
+        await _ensure_collection_with_retry()
+    except Exception as _qdrant_err:
+        logger.error(
+            "qdrant_unavailable",
+            error=str(_qdrant_err),
+            hint="Qdrant did not become ready within 30 s. "
+                 "Check: docker-compose up -d aita-qdrant",
+        )
+        raise
+
+    # ── RAG + pattern store ───────────────────────────────────────────────────
     naive_rag = NaiveRAG(vector_store, settings.qdrant_collection)
     agentic_rag = AgenticRAG(vector_store, settings.qdrant_collection)
-    rag_engine = RAGEngine(naive_rag, agentic_rag)
+    # Shared in-memory store: FeedbackStep writes into it after each run,
+    # RAGEngine reads from it on the next run so the LLM sees past failures.
+    pattern_store = InMemoryPatternStore()
+    rag_engine = RAGEngine(
+        naive_rag,
+        agentic_rag,
+        pattern_store=pattern_store.get_patterns,
+        feedback_store=pattern_store.get_feedback,
+    )
 
     # ── Spec parsers ──────────────────────────────────────────────────────────
     spec_registry = SpecParserRegistry([OpenAPIParser(), SwaggerParser(), ProtoParser()])
@@ -141,10 +239,6 @@ async def lifespan(app: FastAPI):
     qmetry = QMetryAdapter(settings.qmetry_base_url, settings.qmetry_api_key, settings.qmetry_project_key)
     git_adapter = GitAdapter(settings.git_ssh_key_path or None)
 
-    # ── Git-backed test repo (placeholder — wire in full impl) ─────────────
-    from aita.adapters.outbound.git_test_repo import GitTestRepoAdapter
-    test_repo = GitTestRepoAdapter(settings.test_repo_base_path, git_adapter)
-
     # ── Pipeline steps ────────────────────────────────────────────────────────
     steps = [
         GitPullStep(git_adapter, settings.test_repo_base_path),
@@ -152,17 +246,21 @@ async def lifespan(app: FastAPI):
         SourceScanStep(scanner_registry),
         EndpointDiffStep(fingerprinter, cache),
         RAGEnrichStep(rag_engine),
+        FetchExistingTestsStep(),
         GenerateStep(generator),
         HealStep(healer),
-        PersistStep(test_repo),
+        PersistStep(),
         ExecuteStep(executor, docker),
-        FeedbackStep(FeedbackCollector(), PatternLearner()),
+        FeedbackStep(FeedbackCollector(), PatternLearner(), pattern_sink=pattern_store),
         ReportStep(allure, qmetry, allure_results_dir),
         GateStep(settings.quality_gate_threshold),
+        PublishStep(),
     ]
 
     app.state.orchestrator = PipelineOrchestrator(steps, cache)
     app.state.ingester = KnowledgeIngester(vector_store, settings.qdrant_collection)
+    app.state.rag_engine = rag_engine
+    app.state.vector_store = vector_store
 
     logger.info("aita_started")
     yield

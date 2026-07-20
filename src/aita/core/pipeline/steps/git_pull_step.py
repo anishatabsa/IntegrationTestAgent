@@ -23,14 +23,33 @@ class GitPullStep(BaseStep):
     def step_id(self) -> PipelineStep:
         return PipelineStep.GIT_PULL
 
+    def should_skip(self, ctx: PipelineContext) -> bool:
+        repo_url = ctx.options.repo_url or (
+            ctx.run.service.repo_url if ctx.run and ctx.run.service else ""
+        )
+        spec_url = ctx.options.spec_url or ctx.options.base_url
+        # When the source repo is on GitHub AND the spec comes from the live service,
+        # we can skip the local clone entirely — source scanning uses the GitHub API
+        # and the spec is fetched over HTTP by SpecParseStep.
+        if repo_url.startswith("https://github.com/") and spec_url:
+            logger.info("git_pull_skipped_github_api_mode", repo_url=repo_url)
+            return True
+        return False
+
     async def _execute(self, ctx: PipelineContext) -> None:
         service = ctx.options.service_name
         branch = ctx.options.branch
-        repo_url = ctx.run.service.repo_url if ctx.run and ctx.run.service else ""
+
+        # Prefer inline options (no service registry needed), fall back to DB record
+        repo_url = ctx.options.repo_url or (
+            ctx.run.service.repo_url if ctx.run and ctx.run.service else ""
+        )
 
         if not repo_url:
             raise PipelineStepError(
-                self.step_id, f"No repo_url configured for service '{service}'"
+                self.step_id,
+                f"No repo_url for service '{service}'. "
+                "Pass repo_url in the run request or pre-register the service."
             )
 
         target_dir = self._repos_base / service

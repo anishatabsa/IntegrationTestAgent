@@ -24,7 +24,10 @@ class GenerateStep(BaseStep):
 
     async def _execute(self, ctx: PipelineContext) -> None:
         service = ctx.options.service_name
-        language = ctx.run.service.language if ctx.run and ctx.run.service else "python"
+        language = (
+            ctx.options.language
+            or (ctx.run.service.language if ctx.run and ctx.run.service else "python")
+        )
         total_tokens = 0
 
         changed_eps = [e for e in ctx.endpoints if e.operation_id in ctx.changed_operations]
@@ -37,6 +40,14 @@ class GenerateStep(BaseStep):
             fp = ctx.fingerprints.get(ep.operation_id)
             rag_ctx = ctx.rag_context
 
+            existing_content = ctx.existing_tests.get(ep.operation_id)
+            if existing_content:
+                logger.info(
+                    "generate_improvement_mode",
+                    op_id=ep.operation_id,
+                    existing_bytes=len(existing_content),
+                )
+
             test_case, tokens = await self._gen.generate(
                 endpoint=ep,
                 scanned=scanned,
@@ -44,6 +55,7 @@ class GenerateStep(BaseStep):
                 rag_context=rag_ctx,
                 language=language,
                 ignore_cache=ctx.options.ignore_cache,
+                existing_content=existing_content,
             )
             ctx.generated_tests[ep.operation_id] = test_case
             total_tokens += tokens

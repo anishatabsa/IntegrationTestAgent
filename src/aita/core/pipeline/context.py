@@ -40,6 +40,18 @@ class PipelineOptions:
     triggered_by: str = "manual"    # manual | gitlab | jenkins | cli
     extra: dict[str, Any] = field(default_factory=dict)
 
+    # ── Inline service config (used when no DB service registry entry exists) ─
+    # Allows triggering a run without pre-registering the service via /api/v1/services.
+    repo_url: str = ""       # git clone URL or file:// local path
+    base_url: str = ""       # running service base URL (e.g. http://localhost:8001)
+    language: str = "python" # python | java
+    spec_url: str = ""       # fetch OpenAPI spec from this URL (e.g. /openapi.json on base_url)
+
+    # ── Test automation repo (GitHub PR publishing) ───────────────────────────
+    test_automation_repo_url: str = ""   # e.g. https://github.com/org/integration-test-automation
+    test_automation_branch: str = "main" # default branch of the automation repo
+    publish_on_gate_pass: bool = True    # only publish when quality gate passes
+
 
 @dataclass
 class StepResult:
@@ -83,6 +95,9 @@ class PipelineContext:
     # ── RAG ──────────────────────────────────────────────────────────────────
     rag_context: RAGContext | None = None
 
+    # ── Existing tests (fetched from automation repo before generation) ──────
+    existing_tests: dict[str, str] = field(default_factory=dict)                 # op_id → file content
+
     # ── Generated / healed tests ─────────────────────────────────────────────
     generated_tests: dict[str, TestCase] = field(default_factory=dict)           # op_id → test
     healed_tests: dict[str, TestCase] = field(default_factory=dict)
@@ -91,6 +106,9 @@ class PipelineContext:
     test_results: list[TestResult] = field(default_factory=list)
     allure_report_url: str | None = None
     qmetry_cycle_key: str | None = None
+
+    # ── Publish ───────────────────────────────────────────────────────────────
+    pr_url: str | None = None
 
     # ── Feedback & learning ───────────────────────────────────────────────────
     feedback_items: list[FeedbackItem] = field(default_factory=list)
@@ -113,6 +131,7 @@ class PipelineContext:
 
     def summary(self) -> dict[str, Any]:
         passing = sum(1 for r in self.test_results if r.status == "passed")
+        errors = sum(1 for r in self.test_results if r.status == "error")
         total = len(self.test_results)
         return {
             "run_id": str(self.run_id),
@@ -122,9 +141,11 @@ class PipelineContext:
             "tests_generated": len(self.generated_tests),
             "tests_healed": len(self.healed_tests),
             "tests_passing": passing,
+            "tests_errors": errors,
             "tests_total": total,
             "pass_rate": round(passing / total * 100, 1) if total else 0,
             "token_usage": self.token_usage,
+            "pr_url": self.pr_url,
             "errors": self.errors,
             "warnings": self.warnings,
         }

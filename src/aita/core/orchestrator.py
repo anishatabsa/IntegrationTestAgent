@@ -44,9 +44,23 @@ class PipelineOrchestrator(PipelinePort):
         self._steps = steps
         self._cache = cache
         self._active_runs: dict[UUID, PipelineContext] = {}
+        # Completed/failed runs stay here so the SSE stream can read the final
+        # status even if the pipeline finished before the stream connected.
+        self._completed_runs: dict[UUID, PipelineContext] = {}
 
-    async def run(self, service_name: str, options: PipelineOptions) -> PipelineContext:
-        ctx = PipelineContext(options=options)
+    def register_run(self, ctx: PipelineContext) -> None:
+        """Pre-register a context so it can be found by run_id before execution starts."""
+        self._active_runs[ctx.run_id] = ctx
+
+    async def run(
+        self,
+        service_name: str,
+        options: PipelineOptions,
+        ctx: PipelineContext | None = None,
+    ) -> PipelineContext:
+        if ctx is None:
+            ctx = PipelineContext(options=options)
+        # Idempotent — pre-registered by trigger_run or created here
         self._active_runs[ctx.run_id] = ctx
         ctx.started_at = datetime.now(timezone.utc)
         ctx.status = RunStatus.RUNNING
@@ -64,7 +78,9 @@ class PipelineOrchestrator(PipelinePort):
             ctx.finished_at = datetime.now(timezone.utc)
             if ctx.status == RunStatus.RUNNING:
                 ctx.status = RunStatus.COMPLETED
-            self._active_runs.pop(ctx.run_id, None)
+            done = self._active_runs.pop(ctx.run_id, None)
+            if done:
+                self._completed_runs[ctx.run_id] = done
 
         logger.info("pipeline_finished", run_id=str(ctx.run_id), status=ctx.status)
         return ctx
@@ -109,7 +125,9 @@ class PipelineOrchestrator(PipelinePort):
                 await queue.put({"sse": event.to_sse(), "data": event.__dict__})
             finally:
                 ctx.finished_at = datetime.now(timezone.utc)
-                self._active_runs.pop(ctx.run_id, None)
+                done = self._active_runs.pop(ctx.run_id, None)
+                if done:
+                    self._completed_runs[ctx.run_id] = done
                 await queue.put(None)  # sentinel
 
         asyncio.create_task(_run_with_events())
@@ -121,7 +139,7 @@ class PipelineOrchestrator(PipelinePort):
             yield item
 
     async def get_run(self, run_id: UUID) -> PipelineContext | None:
-        return self._active_runs.get(run_id)
+        return self._active_runs.get(run_id) or self._completed_runs.get(run_id)
 
     async def cancel_run(self, run_id: UUID) -> bool:
         ctx = self._active_runs.get(run_id)

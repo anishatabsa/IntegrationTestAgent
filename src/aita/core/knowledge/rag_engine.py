@@ -44,7 +44,12 @@ class RAGEngine:
         ranked_lists: list[list[str]] = []
         for r in results:
             if isinstance(r, Exception):
-                logger.warning("rag_tier_failed", error=str(r))
+                logger.warning(
+                    "rag_tier_failed",
+                    error=str(r),
+                    error_type=type(r).__name__,
+                    error_repr=repr(r),
+                )
             elif r:
                 ranked_lists.append(r)
 

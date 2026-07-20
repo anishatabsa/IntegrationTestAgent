@@ -13,9 +13,15 @@ logger = structlog.get_logger()
 
 
 class FeedbackStep(BaseStep):
-    def __init__(self, collector: FeedbackCollector, learner: PatternLearner) -> None:
+    def __init__(
+        self,
+        collector: FeedbackCollector,
+        learner: PatternLearner,
+        pattern_sink=None,  # InMemoryPatternStore | None
+    ) -> None:
         self._collector = collector
         self._learner = learner
+        self._sink = pattern_sink
 
     @property
     def step_id(self) -> PipelineStep:
@@ -38,6 +44,11 @@ class FeedbackStep(BaseStep):
             feedback_items=ctx.feedback_items,
         )
         ctx.learned_patterns = new_patterns
+
+        # Persist into the in-memory pattern store so the next pipeline run's
+        # RAGEnrichStep will surface these patterns and feedback to the LLM.
+        if self._sink is not None:
+            self._sink.save(service, new_patterns, ctx.feedback_items)
 
         logger.info(
             "feedback_done",

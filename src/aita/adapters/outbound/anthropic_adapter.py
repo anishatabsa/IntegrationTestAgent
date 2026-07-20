@@ -48,6 +48,7 @@ class AnthropicAdapter(LLMPort):
             response = await self._client.messages.create(**kwargs)
             return response.content[0].text
         except Exception as exc:
+            logger.error("anthropic_api_error", error=str(exc), model=self._model, exc_info=True)
             raise LLMError(f"Anthropic API error: {exc}") from exc
 
     async def complete_cached(self, prompt: str, system: str | None = None) -> tuple[str, bool]:

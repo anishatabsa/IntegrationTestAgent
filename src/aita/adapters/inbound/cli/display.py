@@ -28,7 +28,11 @@ _STEP_EMOJI = {
 
 async def stream_events(api_url: str, payload: dict, console: Console) -> None:
     """POST a run request and stream SSE events to the terminal."""
-    async with httpx.AsyncClient(timeout=600) as client:
+    # connect/write have a generous timeout; read=None so the SSE stream can
+    # wait indefinitely between events (generate step can take 10+ minutes).
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=30, read=None, write=60, pool=30)
+    ) as client:
         # Trigger run
         resp = await client.post(f"{api_url}/api/v1/runs", json=payload)
         if resp.status_code not in (200, 201, 202):
@@ -39,15 +43,22 @@ async def stream_events(api_url: str, payload: dict, console: Console) -> None:
         console.print(f"[dim]Run ID: {run_id}[/]")
 
         # Stream events
-        with Progress(
+        # NOTE: transient=False so completed/failed steps remain visible after the run.
+        progress = Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             TimeElapsedColumn(),
             console=console,
-            transient=True,
-        ) as progress:
-            task = progress.add_task("Starting pipeline...", total=None)
+            transient=False,
+        )
+        task = progress.add_task("Starting pipeline...", total=None)
+        progress.start()
 
+        summary_data: dict = {}
+        final_event: str = ""
+        final_message: str = ""
+
+        try:
             async with client.stream("GET", f"{api_url}/api/v1/runs/{run_id}/stream") as stream:
                 async for line in stream.aiter_lines():
                     if not line.startswith("data:"):
@@ -63,19 +74,38 @@ async def stream_events(api_url: str, payload: dict, console: Console) -> None:
                     emoji = _STEP_EMOJI.get(step, "▸")
 
                     if event_type == "step_started":
-                        progress.update(task, description=f"{emoji} {message}")
+                        progress.update(task, description=f"{emoji} Running {step}...")
                     elif event_type == "step_completed":
-                        console.print(f"  [green]✓[/] {emoji} {step}")
-                    elif event_type == "step_failed":
-                        console.print(f"  [red]✗[/] {emoji} {step}: {message}")
+                        progress.update(task, description=f"{emoji} {step} ✓")
+                        console.print(f"  [green]✓[/] {emoji} {step}", highlight=False)
+                    elif event_type in ("step_failed", "step_skipped"):
+                        label = "skipped" if event_type == "step_skipped" else f"✗ {message}"
+                        console.print(f"  [{'yellow' if 'skip' in event_type else 'red'}]{label}[/] {emoji} {step}", highlight=False)
                     elif event_type == "pipeline_completed":
-                        progress.stop()
-                        print_summary(data.get("data", {}), console)
-                        return
+                        summary_data = data.get("data", {})
+                        final_event = "completed"
+                        break
                     elif event_type == "pipeline_failed":
-                        progress.stop()
-                        console.print(Panel(f"[red]Pipeline FAILED:[/] {message}", style="red"))
-                        return
+                        summary_data = data.get("data", {})
+                        final_message = message
+                        final_event = "failed"
+                        break
+                    elif event_type == "error":
+                        final_message = message
+                        final_event = "error"
+                        break
+        finally:
+            progress.stop()
+
+        console.print()  # blank line after progress
+        if final_event == "completed":
+            print_summary(summary_data, console)
+        elif final_event == "failed":
+            console.print(Panel(f"[red]Pipeline FAILED:[/] {final_message}", style="red"))
+            if summary_data:
+                print_summary(summary_data, console)
+        elif final_event == "error":
+            console.print(f"[red]Error:[/] {final_message}")
 
 
 def print_summary(summary: dict, console: Console) -> None:
@@ -91,7 +121,9 @@ def print_summary(summary: dict, console: Console) -> None:
         f"Tests: {summary.get('tests_generated', 0)} generated, "
         f"{summary.get('tests_healed', 0)} healed\n"
         f"Results: [bold]{summary.get('tests_passing', 0)}/{summary.get('tests_total', 0)}[/] "
-        f"passing ([bold]{summary.get('pass_rate', 0)}%[/])\n"
+        f"passing ([bold]{summary.get('pass_rate', 0)}%[/])"
+        + (f", {summary.get('tests_errors', 0)} collection errors" if summary.get('tests_errors') else "")
+        + "\n"
         f"Tokens: {sum(summary.get('token_usage', {}).values())}",
         title="Summary",
         style=color,

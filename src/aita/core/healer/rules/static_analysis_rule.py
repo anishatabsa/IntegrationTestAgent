@@ -25,9 +25,14 @@ class StaticAnalysisRule(BaseHealerRule):
         return RuleResult(content=content)
 
     def _check_python(self, content: str) -> RuleResult:
+        # Strip markdown fences the LLM sometimes wraps output in despite instructions.
+        # ```python ... ``` on line 1 causes SyntaxError, which drops the whole file.
+        stripped = self._strip_markdown_fences(content)
+        if stripped != content:
+            content = stripped
+
         try:
-            ast.parse(content)
-            return RuleResult(content=content)
+            tree = ast.parse(content)
         except SyntaxError as exc:
             # Attempt simple fixes: truncated def line
             fixed = self._fix_truncated_def(content)
@@ -40,6 +45,79 @@ class StaticAnalysisRule(BaseHealerRule):
                     dropped=True,
                     error=f"Python SyntaxError: {exc}",
                 )
+
+        # Collect all module-level lines that will raise NameError at import/collection time.
+        # (1) References to 'self' outside any class/function
+        # (2) Bare name expressions (e.g. LLM garbage like 'feEND') — valid syntax but NameError
+        bad_lines: list[int] = []
+        bad_lines.extend(self._find_module_level_self(tree))
+        bad_lines.extend(self._find_module_level_bare_names(tree))
+
+        if bad_lines:
+            fixed = self._remove_module_level_self_lines(content, bad_lines)
+            try:
+                ast.parse(fixed)
+                return RuleResult(content=fixed, modified=True)
+            except SyntaxError:
+                return RuleResult(
+                    content=content,
+                    dropped=True,
+                    error=f"Module-level issues on lines {bad_lines} could not be auto-fixed",
+                )
+
+        return RuleResult(content=content)
+
+    def _strip_markdown_fences(self, content: str) -> str:
+        """Remove ```python ... ``` or ``` ... ``` fences the LLM wraps code in.
+
+        The system prompt says "Output ONLY valid Python code, no markdown fences"
+        but some model versions still wrap output. A leading fence produces a
+        SyntaxError on line 1, causing the whole file to be dropped.
+        """
+        stripped = content.strip()
+        # Opening fence: ```python or ``` optionally followed by whitespace/newline
+        if re.match(r'^```(?:python)?\s*\n', stripped):
+            stripped = re.sub(r'^```(?:python)?\s*\n', '', stripped)
+            # Remove the matching closing fence at the very end
+            stripped = re.sub(r'\n```\s*$', '', stripped)
+            return stripped
+        return content
+
+    def _find_module_level_bare_names(self, tree: ast.Module) -> list[int]:
+        """Return line numbers of module-level bare name expressions (e.g. 'feEND').
+
+        These are syntactically valid but raise NameError at collection time.
+        Pattern: top-level ast.Expr whose value is a plain ast.Name (not a call,
+        not a constant, not an assignment) — always LLM output garbage.
+        """
+        bad: list[int] = []
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Name):
+                bad.append(node.lineno)
+        return bad
+
+    def _find_module_level_self(self, tree: ast.Module) -> list[int]:
+        """Return line numbers of statements at module level that reference 'self'."""
+        bad: list[int] = []
+        for node in ast.iter_child_nodes(tree):
+            # Only look at top-level statements (not inside class/function)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            for child in ast.walk(node):
+                if isinstance(child, ast.Name) and child.id == "self":
+                    bad.append(getattr(child, "lineno", 0))
+        return bad
+
+    def _remove_module_level_self_lines(self, content: str, bad_lines: set | list) -> str:
+        """Drop or neutralise lines that reference 'self' at module level."""
+        bad_set = set(bad_lines)
+        out = []
+        for i, line in enumerate(content.splitlines(), start=1):
+            if i in bad_set:
+                out.append(f"# HEALER: removed module-level self reference: {line.strip()}")
+            else:
+                out.append(line)
+        return "\n".join(out)
 
     def _fix_truncated_def(self, content: str) -> str:
         """Fix lines like `def test_` missing `(self):` closure."""

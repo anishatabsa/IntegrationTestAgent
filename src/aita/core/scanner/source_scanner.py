@@ -18,6 +18,22 @@ class BaseSourceScanner(ABC):
     async def scan(self, repo_dir: Path) -> list[ScannedComponent]:
         ...
 
+    async def scan_from_github(
+        self, repo_url: str, token: str, branch: str = "main"
+    ) -> list[ScannedComponent]:
+        """Scan source files fetched directly from GitHub (no local clone).
+
+        Subclasses that support GitHub API scanning should override this method.
+        The default implementation logs a warning and returns an empty list.
+        """
+        import structlog as _log
+        _log.get_logger().warning(
+            "scan_from_github_not_supported",
+            scanner=type(self).__name__,
+            repo_url=repo_url,
+        )
+        return []
+
 
 class SourceScannerRegistry:
     def __init__(self, scanners: list[BaseSourceScanner]) -> None:

@@ -35,10 +35,13 @@ class TestGenerator:
         rag_context: RAGContext | None,
         language: Language | str,
         ignore_cache: bool = False,
+        existing_content: str | None = None,
     ) -> tuple[TestCase, int]:
         """
         Returns (TestCase, tokens_used).
         Uses LLM response cache unless ignore_cache=True.
+        When existing_content is provided, the LLM operates in improvement mode:
+        it only outputs methods it's fixing or new coverage — not correct existing methods.
         """
         lang = Language(language) if isinstance(language, str) else language
         system = _system_prompt(lang)
@@ -48,6 +51,7 @@ class TestGenerator:
             scanned=scanned,
             fingerprint=fingerprint,
             rag_context=rag_context,
+            existing_content=existing_content,
         )
 
         tokens = self._llm.count_tokens(prompt)
